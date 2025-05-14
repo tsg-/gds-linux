@@ -2835,7 +2835,7 @@ out:
 static bool blk_mq_attempt_bio_merge(struct request_queue *q,
 				     struct bio *bio, unsigned int nr_segs)
 {
-	if (!blk_queue_nomerges(q) && bio_mergeable(bio)) {
+	if (!blk_queue_nomerges(q) && bio_mergeable(bio) && !bio->iouring_dmabuf) {
 		if (blk_attempt_plug_merge(q, bio, nr_segs))
 			return true;
 		if (blk_mq_sched_bio_merge(q, bio, nr_segs))
