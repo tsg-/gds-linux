@@ -1744,6 +1744,12 @@ struct bio *bio_split(struct bio *bio, int sectors,
 
 	split->bi_iter.bi_size = sectors << 9;
 
+	if (bio->iouring_dmabuf) {
+		split->iouring_dmabuf = bio->iouring_dmabuf;
+		split->dmabuf_offset = bio->dmabuf_offset;
+		bio->dmabuf_offset += sectors << 9;
+	}
+
 	if (bio_integrity(split))
 		bio_integrity_trim(split);
 
