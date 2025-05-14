@@ -267,6 +267,10 @@ struct bio {
 
 	struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
+	/* user bio may be split into mulit bios, so we need record this */
+	unsigned int		dmabuf_offset;
+	struct io_uring_dma_buf *iouring_dmabuf;
+
 	struct bio_set		*bi_pool;
 
 	/*

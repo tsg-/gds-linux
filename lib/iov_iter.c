@@ -687,7 +687,8 @@ void iov_iter_kvec(struct iov_iter *i, unsigned int direction,
 		.kvec = kvec,
 		.nr_segs = nr_segs,
 		.iov_offset = 0,
-		.count = count
+		.count = count,
+		.iouring_dmabuf = NULL,
 	};
 }
 EXPORT_SYMBOL(iov_iter_kvec);
@@ -703,7 +704,8 @@ void iov_iter_bvec(struct iov_iter *i, unsigned int direction,
 		.bvec = bvec,
 		.nr_segs = nr_segs,
 		.iov_offset = 0,
-		.count = count
+		.count = count,
+		.iouring_dmabuf = NULL,
 	};
 }
 EXPORT_SYMBOL(iov_iter_bvec);
@@ -761,7 +763,8 @@ void iov_iter_xarray(struct iov_iter *i, unsigned int direction,
 		.xarray = xarray,
 		.xarray_start = start,
 		.count = count,
-		.iov_offset = 0
+		.iov_offset = 0,
+		.iouring_dmabuf = NULL,
 	};
 }
 EXPORT_SYMBOL(iov_iter_xarray);
@@ -782,7 +785,8 @@ void iov_iter_discard(struct iov_iter *i, unsigned int direction, size_t count)
 		.iter_type = ITER_DISCARD,
 		.data_source = false,
 		.count = count,
-		.iov_offset = 0
+		.iov_offset = 0,
+		.iouring_dmabuf = NULL,
 	};
 }
 EXPORT_SYMBOL(iov_iter_discard);

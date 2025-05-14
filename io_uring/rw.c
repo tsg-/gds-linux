@@ -360,6 +360,45 @@ int io_prep_write_fixed(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	return io_prep_rw_fixed(req, sqe, ITER_SOURCE);
 }
 
+static int io_prep_rw_dma(struct io_kiocb *req, const struct io_uring_sqe *sqe,
+			    int ddir)
+{
+	struct io_ring_ctx *ctx = req->ctx;
+
+	struct io_uring_dma_buf *dmabuf = ctx->user_bufs[sqe->buf_index]->iouring_dmabuf;
+	if (dmabuf !=NULL) {
+		if (dmabuf->dmabuf_fd != sqe->fd_dma_buf) {
+			pr_warn("READ/WRITE DMA can't use different dmabuf_fd\n");
+			return -EINVAL;
+		}
+		dmabuf->dmabuf_offset = sqe->dmabuf_offset;
+	} else {
+		dmabuf = kmalloc(sizeof(struct io_uring_dma_buf), GFP_KERNEL);
+
+		if (dmabuf == NULL) {
+			pr_warn("can't alloc struct io_uring_dma_buf\n");
+			return -ENOMEM;
+		}
+
+		dmabuf->dmabuf_fd = sqe->fd_dma_buf;
+		dmabuf->dmabuf_offset = sqe->dmabuf_offset;
+
+		ctx->user_bufs[sqe->buf_index]->iouring_dmabuf = dmabuf;
+	}
+
+	return io_prep_rw_fixed(req, sqe, ddir);
+}
+
+int io_prep_read_dma(struct io_kiocb *req, const struct io_uring_sqe *sqe)
+{
+	return io_prep_rw_dma(req, sqe, ITER_DEST);
+}
+
+int io_prep_write_dma(struct io_kiocb *req, const struct io_uring_sqe *sqe)
+{
+	return io_prep_rw_dma(req, sqe, ITER_SOURCE);
+}
+
 /*
  * Multishot read is prepared just like a normal read/write request, only
  * difference is that we set the MULTISHOT flag.

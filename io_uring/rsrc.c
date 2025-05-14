@@ -123,6 +123,8 @@ static void io_buffer_unmap(struct io_ring_ctx *ctx, struct io_mapped_ubuf **slo
 			unpin_user_page(imu->bvec[i].bv_page);
 		if (imu->acct_pages)
 			io_unaccount_mem(ctx, imu->acct_pages);
+		if (imu->iouring_dmabuf)
+			io_uring_release_dmabuf(imu->iouring_dmabuf);
 		kvfree(imu);
 	}
 }
@@ -994,6 +996,7 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 	imu->len = iov->iov_len;
 	imu->nr_bvecs = nr_pages;
 	imu->folio_shift = PAGE_SHIFT;
+	imu->iouring_dmabuf = NULL;
 	if (coalesced)
 		imu->folio_shift = data.folio_shift;
 	refcount_set(&imu->refs, 1);
@@ -1106,6 +1109,8 @@ int io_import_fixed(int ddir, struct iov_iter *iter,
 	 */
 	offset = buf_addr - imu->ubuf;
 	iov_iter_bvec(iter, ddir, imu->bvec, imu->nr_bvecs, offset + len);
+
+	iter->iouring_dmabuf = imu->iouring_dmabuf;
 
 	if (offset) {
 		/*

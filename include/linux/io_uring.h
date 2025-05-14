@@ -5,8 +5,21 @@
 #include <linux/sched.h>
 #include <linux/xarray.h>
 #include <uapi/linux/io_uring.h>
+#include <linux/blk-mq.h>
+#include <linux/scatterlist.h>
+#include <linux/dma-buf.h>
 
 #if defined(CONFIG_IO_URING)
+
+struct io_uring_dma_buf {
+	struct			dma_buf_attachment *attach;
+	struct			sg_table *sgt;
+	unsigned int		dmabuf_fd;
+	unsigned int		dmabuf_offset;
+};
+
+void io_uring_release_dmabuf(struct io_uring_dma_buf *uring_dmabuf);
+struct io_uring_dma_buf *io_uring_get_dmabuf(struct request *req, struct device *dev);
 void __io_uring_cancel(bool cancel_all);
 void __io_uring_free(struct task_struct *tsk);
 void io_uring_unreg_ringfd(void);
@@ -31,6 +44,13 @@ static inline void io_uring_free(struct task_struct *tsk)
 		__io_uring_free(tsk);
 }
 #else
+static inline void io_uring_release_dmabuf(struct io_uring_dma_buf *uring_dmabuf)
+{
+}
+static inline struct io_uring_dma_buf *io_uring_get_dmabuf(struct request *req, struct device *dev)
+{
+	return NULL;
+}
 static inline void io_uring_task_cancel(void)
 {
 }

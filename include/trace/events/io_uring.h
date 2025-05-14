@@ -513,6 +513,8 @@ TRACE_EVENT(io_uring_req_failed,
 		__field( u16,			buf_index	)
 		__field( u16,			personality	)
 		__field( u32,			file_index	)
+		__field( u32,			dmabuf_offset	)
+		__field( s32,			fd_dma_buf	)
 		__field( u64,			pad1		)
 		__field( u64,			addr3		)
 		__field( int,			error		)
@@ -534,6 +536,8 @@ TRACE_EVENT(io_uring_req_failed,
 		__entry->buf_index	= sqe->buf_index;
 		__entry->personality	= sqe->personality;
 		__entry->file_index	= sqe->file_index;
+		__entry->dmabuf_offset = sqe->dmabuf_offset;
+		__entry->fd_dma_buf = sqe->fd_dma_buf;
 		__entry->pad1		= sqe->__pad2[0];
 		__entry->addr3		= sqe->addr3;
 		__entry->error		= error;

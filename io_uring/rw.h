@@ -14,6 +14,8 @@ struct io_async_rw {
 
 int io_prep_read_fixed(struct io_kiocb *req, const struct io_uring_sqe *sqe);
 int io_prep_write_fixed(struct io_kiocb *req, const struct io_uring_sqe *sqe);
+int io_prep_read_dma(struct io_kiocb *req, const struct io_uring_sqe *sqe);
+int io_prep_write_dma(struct io_kiocb *req, const struct io_uring_sqe *sqe);
 int io_prep_readv(struct io_kiocb *req, const struct io_uring_sqe *sqe);
 int io_prep_writev(struct io_kiocb *req, const struct io_uring_sqe *sqe);
 int io_prep_read(struct io_kiocb *req, const struct io_uring_sqe *sqe);

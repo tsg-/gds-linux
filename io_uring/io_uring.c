@@ -71,6 +71,9 @@
 #include <linux/audit.h>
 #include <linux/security.h>
 #include <asm/shmparam.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-resv.h>
+#include <linux/dma-direction.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/io_uring.h>
@@ -3232,6 +3235,74 @@ void __io_uring_cancel(bool cancel_all)
 {
 	io_uring_cancel_generic(cancel_all, NULL);
 }
+
+void io_uring_release_dmabuf(struct io_uring_dma_buf *uring_dmabuf)
+{
+	//unmap dma_buf dma_buf_unmap_attachment
+	dma_buf_unmap_attachment(uring_dmabuf->attach, uring_dmabuf->sgt, DMA_BIDIRECTIONAL);
+
+	// detach dma_buf
+	dma_buf_detach(uring_dmabuf->attach->dmabuf, uring_dmabuf->attach);
+
+	// put dma_buf
+	dma_buf_put(uring_dmabuf->attach->dmabuf);
+
+	// free
+	kfree(uring_dmabuf);
+}
+EXPORT_SYMBOL(io_uring_release_dmabuf);
+
+static void dmabuf_invalidate_cb(struct dma_buf_attachment *attach)
+{
+}
+
+static struct dma_buf_attach_ops dmabuf_attach_pinned_ops = {
+	.allow_peer2peer = true,
+	.move_notify = dmabuf_invalidate_cb,
+};
+
+struct io_uring_dma_buf *io_uring_get_dmabuf(struct request *req, struct device *dev)
+{
+	struct dma_buf *dmabuf;
+	int err;
+	struct io_uring_dma_buf *iouring_dmabuf = req->bio->iouring_dmabuf;
+
+	if (iouring_dmabuf->attach) {
+		return iouring_dmabuf;
+	}
+
+	dmabuf = dma_buf_get(iouring_dmabuf->dmabuf_fd);
+	if (IS_ERR(dmabuf))
+		return NULL;
+
+	iouring_dmabuf->attach = dma_buf_dynamic_attach(dmabuf, dev,
+			&dmabuf_attach_pinned_ops, NULL);
+	if (IS_ERR(iouring_dmabuf->attach)) {
+		goto attach_err;
+	}
+
+	dma_resv_lock(iouring_dmabuf->attach->dmabuf->resv, NULL);
+	err = dma_buf_pin(iouring_dmabuf->attach);
+	if (err) {
+		dma_resv_unlock(iouring_dmabuf->attach->dmabuf->resv);
+		goto map_err;
+	}
+
+	iouring_dmabuf->sgt = dma_buf_map_attachment(iouring_dmabuf->attach, DMA_BIDIRECTIONAL);
+	dma_resv_unlock(iouring_dmabuf->attach->dmabuf->resv);
+
+	if (IS_ERR(iouring_dmabuf->sgt)) {
+		goto map_err;
+	}
+
+	return iouring_dmabuf;
+map_err:
+	dma_buf_detach(dmabuf, iouring_dmabuf->attach);
+attach_err:
+	dma_buf_put(dmabuf);
+	return NULL;
+}
+EXPORT_SYMBOL(io_uring_get_dmabuf);
 
 static int io_validate_ext_arg(unsigned flags, const void __user *argp, size_t argsz)
 {

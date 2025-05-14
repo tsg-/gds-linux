@@ -88,6 +88,7 @@ struct io_uring_sqe {
 		__s32	splice_fd_in;
 		__u32	file_index;
 		__u32	optlen;
+		__u32   dmabuf_offset;
 		struct {
 			__u16	addr_len;
 			__u16	__pad3[1];
@@ -97,6 +98,11 @@ struct io_uring_sqe {
 		struct {
 			__u64	addr3;
 			__u64	__pad2[1];
+		};
+		struct {
+			__s32	fd_dma_buf;
+			__u32	__pad;
+			__u64	__pad4[1];
 		};
 		__u64	optval;
 		/*
@@ -259,6 +265,8 @@ enum io_uring_op {
 	IORING_OP_FTRUNCATE,
 	IORING_OP_BIND,
 	IORING_OP_LISTEN,
+	IORING_OP_READ_DMA,
+	IORING_OP_WRITE_DMA,
 
 	/* this goes last, obviously */
 	IORING_OP_LAST,
