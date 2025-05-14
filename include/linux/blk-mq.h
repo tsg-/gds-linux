@@ -1176,4 +1176,11 @@ static inline int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 }
 void blk_dump_rq_flags(struct request *, char *);
 
+static inline bool blk_rq_use_dmabuf(struct request *req)
+{
+	if (req->bio && req->bio->iouring_dmabuf)
+		return true;
+	return false;
+}
+
 #endif /* BLK_MQ_H */

@@ -28,6 +28,9 @@
 #include <linux/io-64-nonatomic-hi-lo.h>
 #include <linux/sed-opal.h>
 #include <linux/pci-p2pdma.h>
+#include <linux/io_uring.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-resv.h>
 
 #include "trace.h"
 #include "nvme.h"
@@ -236,6 +239,7 @@ struct nvme_iod {
 	unsigned int dma_len;	/* length of single DMA segment mapping */
 	dma_addr_t first_dma;
 	dma_addr_t meta_dma;
+	bool is_dmabuf_io;
 	struct sg_table sgt;
 	union nvme_descriptor list[NVME_MAX_NR_ALLOCATIONS];
 };
@@ -549,7 +553,8 @@ static void nvme_unmap_data(struct nvme_dev *dev, struct request *req)
 
 	WARN_ON_ONCE(!iod->sgt.nents);
 
-	dma_unmap_sgtable(dev->dev, &iod->sgt, rq_dma_dir(req), 0);
+	if(!iod->is_dmabuf_io)
+		dma_unmap_sgtable(dev->dev, &iod->sgt, rq_dma_dir(req), 0);
 
 	if (iod->nr_allocations == 0)
 		dma_pool_free(dev->prp_small_pool, iod->list[0].sg_list,
@@ -634,6 +639,7 @@ static blk_status_t nvme_pci_setup_prps(struct nvme_dev *dev,
 			if (!prp_list)
 				goto free_prps;
 			iod->list[iod->nr_allocations++].prp_list = prp_list;
+			WARN_ON(iod->nr_allocations > 2);
 			prp_list[0] = old_prp_list[i - 1];
 			old_prp_list[i - 1] = cpu_to_le64(prp_dma);
 			i = 1;
@@ -766,12 +772,91 @@ static blk_status_t nvme_setup_sgl_simple(struct nvme_dev *dev,
 	return BLK_STS_OK;
 }
 
+static blk_status_t nvme_dmabuf_map_data(struct nvme_dev *dev, struct request *req,
+               struct nvme_command *cmnd)
+{
+	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
+	blk_status_t ret = BLK_STS_RESOURCE;
+	unsigned int req_size = blk_rq_payload_bytes(req);
+	struct io_uring_dma_buf *uring_dmabuf;
+
+	struct scatterlist *sg, *clone_sgl, *clone_sg;
+	int i;
+
+	unsigned long  start, end, cur = 0;
+	int nr_mapped = 0;
+	iod->is_dmabuf_io = true;
+
+	uring_dmabuf = io_uring_get_dmabuf(req, dev->dev);
+
+	if (uring_dmabuf != NULL) {
+		//TODO: need more check for dmabuf_offset, req_size
+		start = uring_dmabuf->dmabuf_offset + req->bio->dmabuf_offset;
+		end =  start + req_size;
+#if 0
+		pr_warn("%s io_pos=%ld, dmaoffset =%lu, end=%lu, req_size=%lu\n",
+				__func__, blk_rq_pos(req), start, end, req_size);
+		nvme_print_sgl(uring_dmabuf->sgt->sgl, uring_dmabuf->sgt->nents);
+#endif
+		clone_sgl = mempool_alloc(dev->iod_mempool, GFP_ATOMIC);
+		if (clone_sgl == NULL) {
+			pr_warn("%s can't alloc struct scatterlist\n", __func__);
+			return ret;
+		}
+
+		for_each_sgtable_dma_sg(uring_dmabuf->sgt, sg, i) {
+			clone_sg = clone_sgl + nr_mapped;
+
+			if (start < cur + sg_dma_len(sg) && cur < end) {
+				memcpy(clone_sg, sg, sizeof(struct scatterlist));
+				nr_mapped++;
+			} else {
+				cur += sg_dma_len(sg);
+				continue;
+			}
+
+			if (cur <= start && start < cur + sg_dma_len(clone_sg)) {
+				unsigned long offset = start - cur;
+
+				//pr_warn("first_sg dma_addr=0x%lx, offset=%lu\n", sg_dma_address(clone_sg), offset);
+				sg_dma_address(clone_sg) += offset;
+				sg_dma_len(clone_sg) -= offset;
+				cur += offset;
+			}
+			if (cur < end && end <= cur + sg_dma_len(clone_sg)) {
+				unsigned long trim = cur + sg_dma_len(clone_sg) - end;
+
+				//pr_warn("last sg dmaadd=0x%lx, trim=%lu\n", sg_dma_address(clone_sg), trim);
+				sg_dma_len(clone_sg) -= trim;
+				break;
+			}
+			cur += sg_dma_len(clone_sg);
+		}
+
+		WARN_ON(!nr_mapped);
+
+		iod->dma_len = 0;
+		iod->sgt.sgl = clone_sgl;
+		iod->sgt.nents = nr_mapped;
+
+		return nvme_pci_setup_sgls(dev, req, &cmnd->rw);
+	}
+
+	return ret;
+}
+
 static blk_status_t nvme_map_data(struct nvme_dev *dev, struct request *req,
 		struct nvme_command *cmnd)
 {
 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
 	blk_status_t ret = BLK_STS_RESOURCE;
 	int rc;
+
+	if (blk_rq_use_dmabuf(req)) {
+		ret = nvme_dmabuf_map_data(dev, req, cmnd);
+		WARN_ON(ret);
+		return ret;
+	}
 
 	if (blk_rq_nr_phys_segments(req) == 1) {
 		struct nvme_queue *nvmeq = req->mq_hctx->driver_data;
@@ -843,6 +928,7 @@ static blk_status_t nvme_prep_rq(struct nvme_dev *dev, struct request *req)
 	iod->aborted = false;
 	iod->nr_allocations = -1;
 	iod->sgt.nents = 0;
+	iod->is_dmabuf_io = false;
 
 	ret = nvme_setup_cmd(req->q->queuedata, req);
 	if (ret)
@@ -3643,3 +3729,4 @@ MODULE_VERSION("1.0");
 MODULE_DESCRIPTION("NVMe host PCIe transport driver");
 module_init(nvme_init);
 module_exit(nvme_exit);
+MODULE_IMPORT_NS(DMA_BUF);
