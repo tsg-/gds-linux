@@ -299,7 +299,7 @@ static bool cpu_supports_p2pdma(void)
 		return true;
 #endif
 
-	return false;
+	return true;
 }
 
 static const struct pci_p2pdma_whitelist_entry {

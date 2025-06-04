@@ -329,6 +329,11 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 			bio_put(bio);
 			goto zero_tail;
 		}
+		/*iouring_dmabuf set in func bio_iov_iter_get_pages*/
+		if (bio->iouring_dmabuf) {
+			bio->dmabuf_offset = dio->size;
+			//pr_warn("%s bio size=%ld\n", __func__, bio->bi_iter.bi_size);
+		}
 
 		n = bio->bi_iter.bi_size;
 		if (dio->flags & IOMAP_DIO_WRITE) {

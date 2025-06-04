@@ -1122,6 +1122,13 @@ static inline int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 }
 void blk_dump_rq_flags(struct request *, char *);
 
+static inline bool blk_rq_use_dmabuf(struct request *req)
+{
+	if (req->bio && req->bio->iouring_dmabuf)
+		return true;
+	return false;
+}
+
 #ifdef CONFIG_BLK_DEV_ZONED
 static inline unsigned int blk_rq_zone_no(struct request *rq)
 {
