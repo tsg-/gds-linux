@@ -77,6 +77,7 @@ xfs-y				+= xfs_aops.o \
 				   xfs_dahash_test.o \
 				   xfs_dir2_readdir.o \
 				   xfs_discard.o \
+				   xfs_dma_token.o \
 				   xfs_error.o \
 				   xfs_exchrange.o \
 				   xfs_export.o \
