@@ -67,11 +67,18 @@ struct dma_token *blkdev_dma_map(struct file *file,
 {
 	struct request_queue *q = bdev_get_queue(file_bdev(file));
 
-	if (!(file->f_flags & O_DIRECT))
-		return ERR_PTR(-EINVAL);
-	if (!q->mq_ops)
-		return ERR_PTR(-EINVAL);
+	printk(KERN_INFO "block: blkdev_dma_map: entry f_flags=0x%x\n", file->f_flags);
 
+	if (!(file->f_flags & O_DIRECT)) {
+		printk(KERN_INFO "block: blkdev_dma_map: FAIL not O_DIRECT\n");
+		return ERR_PTR(-EINVAL);
+	}
+	if (!q->mq_ops) {
+		printk(KERN_INFO "block: blkdev_dma_map: FAIL no mq_ops\n");
+		return ERR_PTR(-EINVAL);
+	}
+
+	printk(KERN_INFO "block: blkdev_dma_map: calling blk_mq_dma_map\n");
 	return blk_mq_dma_map(q, params);
 }
 

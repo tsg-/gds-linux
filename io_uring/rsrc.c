@@ -831,8 +831,14 @@ static struct io_rsrc_node *io_register_dmabuf(struct io_ring_ctx *ctx,
 	struct dma_token *token;
 	int ret;
 
-	if (iov->iov_base || iov->iov_len)
+	printk(KERN_INFO "io_uring: io_register_dmabuf: entry target_fd=%d dmabuf_fd=%d\n",
+	       rb->target_fd, rb->dmabuf_fd);
+
+	if (iov->iov_base || iov->iov_len) {
+		printk(KERN_INFO "io_uring: io_register_dmabuf: FAIL iov not empty base=%p len=%zu\n",
+		       iov->iov_base, iov->iov_len);
 		return ERR_PTR(-EFAULT);
+	}
 
 	node = io_rsrc_node_alloc(ctx, IORING_RSRC_BUFFER);
 	if (!node) {
@@ -854,24 +860,30 @@ static struct io_rsrc_node *io_register_dmabuf(struct io_ring_ctx *ctx,
 
 	target_file = fget(rb->target_fd);
 	if (!target_file) {
+		printk(KERN_INFO "io_uring: io_register_dmabuf: FAIL fget target_fd=%d\n", rb->target_fd);
 		ret = -EBADF;
 		goto err;
 	}
+	printk(KERN_INFO "io_uring: io_register_dmabuf: got target_file\n");
 
 	dmabuf = dma_buf_get(rb->dmabuf_fd);
 	if (IS_ERR(dmabuf)) {
 		ret = PTR_ERR(dmabuf);
+		printk(KERN_INFO "io_uring: io_register_dmabuf: FAIL dma_buf_get=%d\n", ret);
 		dmabuf = NULL;
 		goto err;
 	}
+	printk(KERN_INFO "io_uring: io_register_dmabuf: got dmabuf size=%zu\n", dmabuf->size);
 
 	params.dmabuf = dmabuf;
 	params.dir = DMA_BIDIRECTIONAL;
 	token = dma_token_create(target_file, &params);
 	if (IS_ERR(token)) {
 		ret = PTR_ERR(token);
+		printk(KERN_INFO "io_uring: io_register_dmabuf: FAIL dma_token_create=%d\n", ret);
 		goto err;
 	}
+	printk(KERN_INFO "io_uring: io_register_dmabuf: SUCCESS\n");
 
 	regbuf->target_file = target_file;
 	regbuf->token = token;

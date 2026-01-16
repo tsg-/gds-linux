@@ -489,15 +489,26 @@ static int nvme_init_dma_token(struct request_queue *q,
 	struct nvme_dev *dev = to_nvme_dev(ns->ctrl);
 	struct dma_buf *dmabuf = token->dmabuf;
 
-	if (dmabuf->size % NVME_CTRL_PAGE_SIZE)
-		return -EINVAL;
+	printk(KERN_INFO "nvme: nvme_init_dma_token: entry dmabuf=%p size=%zu page_size=%d\n",
+	       dmabuf, dmabuf->size, NVME_CTRL_PAGE_SIZE);
 
+	if (dmabuf->size % NVME_CTRL_PAGE_SIZE) {
+		printk(KERN_INFO "nvme: nvme_init_dma_token: FAIL size not aligned size=%zu mod=%zu\n",
+		       dmabuf->size, dmabuf->size % NVME_CTRL_PAGE_SIZE);
+		return -EINVAL;
+	}
+
+	printk(KERN_INFO "nvme: nvme_init_dma_token: calling dma_buf_dynamic_attach\n");
 	attach = dma_buf_dynamic_attach(dmabuf, dev->dev,
 					&nvme_dmabuf_importer_ops, token);
-	if (IS_ERR(attach))
+	if (IS_ERR(attach)) {
+		printk(KERN_INFO "nvme: nvme_init_dma_token: FAIL dma_buf_dynamic_attach=%ld\n",
+		       PTR_ERR(attach));
 		return PTR_ERR(attach);
+	}
 
 	token->private = attach;
+	printk(KERN_INFO "nvme: nvme_init_dma_token: SUCCESS\n");
 	return 0;
 }
 

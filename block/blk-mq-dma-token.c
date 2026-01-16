@@ -200,9 +200,16 @@ struct dma_token *blk_mq_dma_map(struct request_queue *q,
 	struct blk_mq_dma_token *token;
 	int ret;
 
+	printk(KERN_INFO "block: blk_mq_dma_map: entry dmabuf=%p size=%zu\n",
+	       dmabuf, dmabuf ? dmabuf->size : 0);
+
 	if (!q->mq_ops->dma_map || !q->mq_ops->dma_unmap ||
-	    !q->mq_ops->init_dma_token || !q->mq_ops->clean_dma_token)
+	    !q->mq_ops->init_dma_token || !q->mq_ops->clean_dma_token) {
+		printk(KERN_INFO "block: blk_mq_dma_map: FAIL missing ops dma_map=%p dma_unmap=%p init=%p clean=%p\n",
+		       q->mq_ops->dma_map, q->mq_ops->dma_unmap,
+		       q->mq_ops->init_dma_token, q->mq_ops->clean_dma_token);
 		return ERR_PTR(-EINVAL);
+	}
 
 	token = kzalloc(sizeof(*token), GFP_KERNEL);
 	if (!token)
@@ -218,15 +225,19 @@ struct dma_token *blk_mq_dma_map(struct request_queue *q,
 	mutex_init(&token->mapping_lock);
 
 	if (!blk_get_queue(q)) {
+		printk(KERN_INFO "block: blk_mq_dma_map: FAIL blk_get_queue\n");
 		kfree(token);
 		return ERR_PTR(-EFAULT);
 	}
 
+	printk(KERN_INFO "block: blk_mq_dma_map: calling init_dma_token\n");
 	ret = token->q->mq_ops->init_dma_token(token->q, token);
 	if (ret) {
+		printk(KERN_INFO "block: blk_mq_dma_map: FAIL init_dma_token=%d\n", ret);
 		kfree(token);
 		blk_put_queue(q);
 		return ERR_PTR(ret);
 	}
 	return &token->base;
 }
+EXPORT_SYMBOL_GPL(blk_mq_dma_map);
