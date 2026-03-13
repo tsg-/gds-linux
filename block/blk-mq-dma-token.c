@@ -130,6 +130,7 @@ blk_mq_create_dma_map(struct blk_mq_dma_token *token)
 
 	percpu_ref_get(&map->refs);
 	rcu_assign_pointer(token->map, map);
+	percpu_ref_get(&map->refs); /* per-request ref for caller */
 	return map;
 }
 
@@ -154,6 +155,7 @@ static void blk_mq_dma_map_remove(struct blk_mq_dma_token *token)
 	dma_resv_add_fence(dmabuf->resv, &map->fence->base,
 			   DMA_RESV_USAGE_KERNEL);
 	percpu_ref_kill(&map->refs);
+	percpu_ref_put(&map->refs);
 }
 
 blk_status_t blk_rq_assign_dma_map(struct request *rq,

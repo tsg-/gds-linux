@@ -765,6 +765,7 @@ static void blk_mq_finish_request(struct request *rq)
 	struct request_queue *q = rq->q;
 
 	blk_zone_finish_request(rq);
+	blk_rq_drop_dma_map(rq);
 
 	if (rq->rq_flags & RQF_USE_SCHED) {
 		q->elevator->type->ops.finish_request(rq);
@@ -788,7 +789,6 @@ static void __blk_mq_free_request(struct request *rq)
 	blk_pm_mark_last_busy(rq);
 	rq->mq_hctx = NULL;
 
-	blk_rq_drop_dma_map(rq);
 	if (rq->tag != BLK_MQ_NO_TAG) {
 		blk_mq_dec_active_requests(hctx);
 		blk_mq_put_tag(hctx->tags, ctx, rq->tag);
