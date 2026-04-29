@@ -1095,6 +1095,15 @@ static void io_free_batch_list(struct io_ring_ctx *ctx,
 			if (req->flags & REQ_F_REISSUE) {
 				node = req->comp_list.next;
 				req->flags &= ~REQ_F_REISSUE;
+				/*
+				 * Drop the dmabuf map ref taken during the
+				 * initial issue. The reissue path will call
+				 * io_import_dmabuf() again and acquire a fresh
+				 * ref; without dropping here, refs accumulate
+				 * and the dma_buf fence never signals.
+				 */
+				io_req_drop_dmabuf(req);
+				req->flags &= ~REQ_F_DROP_DMABUF;
 				io_queue_iowq(req);
 				continue;
 			}

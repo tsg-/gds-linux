@@ -1267,6 +1267,17 @@ static int io_import_dmabuf(struct io_kiocb *req,
 			return PTR_ERR(map);
 	}
 
+	/*
+	 * If a previous import on this request already took a map ref
+	 * (e.g. io-wq -EAGAIN retry loop calling io_init_rw_fixed -> import
+	 * again with bytes_done==0), drop it before overwriting req->dmabuf_map.
+	 * Otherwise the previous map's ref is orphaned and the dma_buf fence
+	 * never signals.
+	 */
+	if (req->flags & REQ_F_DROP_DMABUF) {
+		io_dmabuf_map_drop(req->dmabuf_map);
+	}
+
 	req->dmabuf_map = map;
 	req->flags |= REQ_F_DROP_DMABUF;
 	iov_iter_dmabuf_map(iter, ddir, map, offset, len);
