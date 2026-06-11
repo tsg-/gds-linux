@@ -1272,6 +1272,10 @@ static int io_import_dmabuf(struct io_kiocb *req,
 			return PTR_ERR(map);
 	}
 
+	/* Drop stale ref from a prior import on this request (retry path) */
+	if (req->flags & REQ_F_DROP_DMABUF)
+		io_dmabuf_map_drop(req->dmabuf_map);
+
 	req->dmabuf_map = map;
 	req->flags |= REQ_F_DROP_DMABUF;
 init_iter:
