@@ -30,9 +30,12 @@
 #include "xfs_error.h"
 #include "xfs_errortag.h"
 
+#include <linux/backing-dev.h>
+#include <linux/blk-mq.h>
+#include <linux/blkdev.h>
 #include <linux/dax.h>
 #include <linux/falloc.h>
-#include <linux/backing-dev.h>
+#include <linux/io_dmabuf_token.h>
 #include <linux/mman.h>
 #include <linux/fadvise.h>
 #include <linux/mount.h>
@@ -2081,6 +2084,68 @@ xfs_file_mmap_prepare(
 	return 0;
 }
 
+#ifdef CONFIG_DMABUF_TOKEN
+static int
+xfs_file_create_dmabuf_token(
+	struct file		*file,
+	struct io_dmabuf_token	*token)
+{
+	struct inode		*inode = file_inode(file);
+	struct xfs_inode	*ip = XFS_I(inode);
+	struct xfs_mount	*mp = ip->i_mount;
+	struct request_queue	*q = bdev_get_queue(inode->i_sb->s_bdev);
+	size_t			length = token->dmabuf->size;
+	int			error;
+
+	if (xfs_is_shutdown(mp))
+		return -EIO;
+	if (!(file->f_flags & O_DIRECT))
+		return -EINVAL;
+	if (IS_DAX(inode))
+		return -EOPNOTSUPP;
+	if (!q->mq_ops || !q->mq_ops->create_dmabuf_token)
+		return -EOPNOTSUPP;
+	if (XFS_IS_REALTIME_INODE(ip))
+		return -EOPNOTSUPP;
+	if (xfs_is_reflink_inode(ip))
+		return -EOPNOTSUPP;
+
+	if (!length)
+		return -EINVAL;
+
+	xfs_ilock(ip, XFS_IOLOCK_SHARED);
+
+	/*
+	 * Defensive cache flush — iomap handles per-I/O coherency at
+	 * submission time, but purge what we can at registration to
+	 * reduce the chance of stale readahead surviving into P2P I/O.
+	 */
+	error = filemap_write_and_wait_range(inode->i_mapping, 0, length - 1);
+	if (error)
+		goto out_unlock;
+	/*
+	 * P2P DMA bypasses the page cache entirely, so we must be strict
+	 * here unlike DIO writes: abort if pages are still pinned.
+	 */
+	error = invalidate_inode_pages2_range(inode->i_mapping, 0,
+					      (length - 1) >> PAGE_SHIFT);
+	if (error == -EBUSY)
+		error = -EAGAIN;
+	if (error)
+		goto out_unlock;
+
+	error = q->mq_ops->create_dmabuf_token(q, token);
+
+out_unlock:
+	/*
+	 * IOLOCK_SHARED blocks truncate/punch during flush + token creation.
+	 * Post-unlock extent validity is ensured by iomap at I/O submission.
+	 */
+	xfs_iunlock(ip, XFS_IOLOCK_SHARED);
+	return error;
+}
+#endif
+
 const struct file_operations xfs_file_operations = {
 	.llseek		= xfs_file_llseek,
 	.read_iter	= xfs_file_read_iter,
@@ -2103,6 +2168,9 @@ const struct file_operations xfs_file_operations = {
 	.fop_flags	= FOP_MMAP_SYNC | FOP_BUFFER_RASYNC |
 			  FOP_BUFFER_WASYNC | FOP_DIO_PARALLEL_WRITE |
 			  FOP_DONTCACHE,
+#ifdef CONFIG_DMABUF_TOKEN
+	.create_dmabuf_token = xfs_file_create_dmabuf_token,
+#endif
 	.setlease	= generic_setlease,
 };
 
