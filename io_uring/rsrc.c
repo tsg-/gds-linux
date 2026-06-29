@@ -813,6 +813,10 @@ static struct io_rsrc_node *io_register_dmabuf(struct io_ring_ctx *ctx,
 	struct dma_buf *dmabuf = NULL;
 	int ret;
 
+	/* Flush any pending async token releases from a prior deregister on
+	 * this ring.  Without this, a rapid deregister+re-register sequence
+	 * can race the async release_work, causing EBADF on subsequent I/O. */
+	flush_scheduled_work();
 	if (!IS_ENABLED(CONFIG_DMABUF_TOKEN))
 		return ERR_PTR(-EOPNOTSUPP);
 	if (desc->uaddr || desc->size)
