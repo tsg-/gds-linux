@@ -1964,6 +1964,8 @@ struct file_operations {
 				unsigned int poll_flags);
 	int (*mmap_prepare)(struct vm_area_desc *);
 	int (*init_dma_buf_io_ctx)(struct file *, struct dma_buf_io_ctx *);
+	bool (*dma_buf_io_compatible)(struct file *file,
+				      struct file *target_file);
 } __randomize_layout;
 
 /* Supports async buffered reads */

@@ -1265,6 +1265,21 @@ static int io_import_kbuf(int ddir, struct iov_iter *iter,
 	return 0;
 }
 
+static bool io_dmabuf_file_compatible(struct file *file,
+				      struct file *target_file)
+{
+	if (file == target_file)
+		return true;
+
+	if (file->f_op != target_file->f_op)
+		return false;
+
+	if (file->f_op->dma_buf_io_compatible)
+		return file->f_op->dma_buf_io_compatible(file, target_file);
+
+	return false;
+}
+
 void io_drop_dmabuf_node(struct io_kiocb *req)
 {
 	struct io_mapped_ubuf *imu;
@@ -1293,7 +1308,7 @@ static int io_import_dmabuf(struct io_kiocb *req,
 		return -EOPNOTSUPP;
 	if (!len)
 		return -EFAULT;
-	if (req->file != db->target_file)
+	if (!io_dmabuf_file_compatible(req->file, db->target_file))
 		return -EBADF;
 
 	if (req->flags & REQ_F_DROP_DMABUF) {
