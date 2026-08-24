@@ -30,6 +30,7 @@
 #include "xfs_error.h"
 #include "xfs_errortag.h"
 
+#include <linux/blkdev.h>
 #include <linux/dax.h>
 #include <linux/falloc.h>
 #include <linux/backing-dev.h>
@@ -2081,6 +2082,57 @@ xfs_file_mmap_prepare(
 	return 0;
 }
 
+static bool
+xfs_file_supports_dma_buf_io(
+	struct file		*file)
+{
+	struct inode		*inode = file_inode(file);
+	struct xfs_inode	*ip = XFS_I(inode);
+
+	if (!(file->f_flags & O_DIRECT))
+		return false;
+	if (xfs_is_shutdown(ip->i_mount))
+		return false;
+	if (IS_DAX(inode))
+		return false;
+	if (XFS_IS_REALTIME_INODE(ip))
+		return false;
+	if (xfs_is_reflink_inode(ip))
+		return false;
+
+	return true;
+}
+
+static bool
+xfs_file_dma_buf_io_compatible(
+	struct file		*file,
+	struct file		*target_file)
+{
+	return file_inode(file)->i_sb == file_inode(target_file)->i_sb &&
+	       xfs_file_supports_dma_buf_io(file);
+}
+
+static int
+xfs_file_init_dma_buf_io_ctx(
+	struct file		*file,
+	struct dma_buf_io_ctx	*ctx)
+{
+	struct inode		*inode = file_inode(file);
+	struct block_device	*bdev = inode->i_sb->s_bdev;
+	struct gendisk		*disk = bdev->bd_disk;
+
+	if (xfs_is_shutdown(XFS_I(inode)->i_mount))
+		return -EIO;
+	if (!(file->f_flags & O_DIRECT))
+		return -EINVAL;
+	if (!xfs_file_supports_dma_buf_io(file))
+		return -EOPNOTSUPP;
+	if (!disk->fops->init_dma_buf_io_ctx)
+		return -EOPNOTSUPP;
+
+	return disk->fops->init_dma_buf_io_ctx(bdev, ctx);
+}
+
 const struct file_operations xfs_file_operations = {
 	.llseek		= xfs_file_llseek,
 	.read_iter	= xfs_file_read_iter,
@@ -2104,6 +2156,8 @@ const struct file_operations xfs_file_operations = {
 			  FOP_BUFFER_WASYNC | FOP_DIO_PARALLEL_WRITE |
 			  FOP_DONTCACHE,
 	.setlease	= generic_setlease,
+	.init_dma_buf_io_ctx = xfs_file_init_dma_buf_io_ctx,
+	.dma_buf_io_compatible = xfs_file_dma_buf_io_compatible,
 };
 
 const struct file_operations xfs_dir_file_operations = {
