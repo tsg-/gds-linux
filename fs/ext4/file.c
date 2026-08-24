@@ -19,6 +19,7 @@
  *	(jj@sunsite.ms.mff.cuni.cz)
  */
 
+#include <linux/blkdev.h>
 #include <linux/time.h>
 #include <linux/fs.h>
 #include <linux/iomap.h>
@@ -971,6 +972,52 @@ loff_t ext4_llseek(struct file *file, loff_t offset, int whence)
 	return vfs_setpos(file, offset, maxbytes);
 }
 
+static bool ext4_file_supports_dma_buf_io(struct file *file)
+{
+	struct inode *inode = file_inode(file);
+
+	if (!(file->f_flags & O_DIRECT))
+		return false;
+	if (ext4_forced_shutdown(inode->i_sb))
+		return false;
+	if (IS_DAX(inode))
+		return false;
+	if (IS_ENCRYPTED(inode))
+		return false;
+	if (IS_VERITY(inode))
+		return false;
+	if (ext4_dio_alignment(inode) == 0)
+		return false;
+
+	return true;
+}
+
+static bool ext4_file_dma_buf_io_compatible(struct file *file,
+					    struct file *target_file)
+{
+	return file_inode(file)->i_sb == file_inode(target_file)->i_sb &&
+	       ext4_file_supports_dma_buf_io(file);
+}
+
+static int ext4_file_init_dma_buf_io_ctx(struct file *file,
+					 struct dma_buf_io_ctx *ctx)
+{
+	struct inode *inode = file_inode(file);
+	struct block_device *bdev = inode->i_sb->s_bdev;
+	struct gendisk *disk = bdev->bd_disk;
+
+	if (ext4_forced_shutdown(inode->i_sb))
+		return -EIO;
+	if (!(file->f_flags & O_DIRECT))
+		return -EINVAL;
+	if (!ext4_file_supports_dma_buf_io(file))
+		return -EOPNOTSUPP;
+	if (!disk->fops->init_dma_buf_io_ctx)
+		return -EOPNOTSUPP;
+
+	return disk->fops->init_dma_buf_io_ctx(bdev, ctx);
+}
+
 const struct file_operations ext4_file_operations = {
 	.llseek		= ext4_llseek,
 	.read_iter	= ext4_file_read_iter,
@@ -992,6 +1039,8 @@ const struct file_operations ext4_file_operations = {
 			  FOP_DIO_PARALLEL_WRITE |
 			  FOP_DONTCACHE,
 	.setlease	= generic_setlease,
+	.init_dma_buf_io_ctx = ext4_file_init_dma_buf_io_ctx,
+	.dma_buf_io_compatible = ext4_file_dma_buf_io_compatible,
 };
 
 const struct inode_operations ext4_file_inode_operations = {
